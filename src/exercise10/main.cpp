@@ -1,7 +1,7 @@
-#include "RaymarchingApplication.h"
+#include "Geometry4D.h"
 
 int main()
 {
-    RaymarchingApplication raymarchingApplication;
-    return raymarchingApplication.Run();
+    Geometry4DApplication geometry4DApplication;
+    return geometry4DApplication.Run();
 }
