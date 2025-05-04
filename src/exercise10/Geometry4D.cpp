@@ -4,6 +4,7 @@
 #include <ituGL/shader/ShaderProgram.h>
 #include <ituGL/geometry/VertexFormat.h>
 #include <ituGL/camera/Camera.h>
+#include <ituGL/scene/SceneCamera.h>
 #include <imgui.h>
 #include <cassert>
 #include <array>
@@ -23,6 +24,8 @@ Geometry4DApplication::Geometry4DApplication()
     , m_xRotation(0)
     , m_yRotation(0)
     , m_zRotation(0)
+    , m_rotationVelocities(0)
+    , m_cubeCenter(0)
 {
 }
 
@@ -30,8 +33,11 @@ void Geometry4DApplication::Initialize()
 {
     Application::Initialize();
 
+    m_imGui.Initialize(GetMainWindow());
+
     InitializeGeometry();
     InitializeShaders();
+    InitializeCamera();
 
     m_colorUniform = m_shaderProgram.GetUniformLocation("Color");
     m_worldMatrixUniform = m_shaderProgram.GetUniformLocation("WorldMatrix");
@@ -39,7 +45,7 @@ void Geometry4DApplication::Initialize()
 
     //Triangles should wind clock-wise
     glEnable(GL_CULL_FACE);
-    glCullFace(GL_FRONT);
+    glCullFace(GL_BACK);
 }
 
 void Geometry4DApplication::Update()
@@ -48,13 +54,9 @@ void Geometry4DApplication::Update()
 
     const Window& window = GetMainWindow();
 
-    // (todo) 03.5: Update the camera matrices
-    int width, height;
-    window.GetDimensions(width, height);
-    m_camera.SetOrthographicProjectionMatrix(glm::vec3(-width * 1.0f / height, -1, -3), glm::vec3(width * 1.0f / height, 1, 3));
+    m_cameraController.Update(GetMainWindow(), GetDeltaTime());
 
-    glm::vec2 mouseCoords = window.GetMousePosition(true);
-    m_camera.SetViewMatrix(glm::vec3(0, 0, 1), glm::vec3(mouseCoords.x, mouseCoords.y, 0));
+    m_camera = *m_cameraController.GetCamera()->GetCamera();
 }
 
 void Geometry4DApplication::Render()
@@ -66,13 +68,16 @@ void Geometry4DApplication::Render()
     Color color = Color(1, 1, 1);
 
     //rotating by the given amount
-    m_xRotation += 1.0f/1000;
+    m_xRotation += m_rotationVelocities[0] / 1000;
+    m_yRotation += m_rotationVelocities[1] / 1000;
+    m_zRotation += m_rotationVelocities[2] / 1000;
 
     glm::mat4 worldMatrix =
+        glm::translate(glm::vec3(m_cubeCenter[0], m_cubeCenter[1], m_cubeCenter[2])) *
         glm::rotate(m_xRotation, glm::vec3(0, 1, 0)) *
         glm::rotate(m_yRotation, glm::vec3(0, 0, 1)) *
         glm::rotate(m_zRotation, glm::vec3(1, 0, 0)) *
-        glm::scale(glm::vec3(0.1f)) * glm::mat4(1.0f);
+        glm::mat4(1.0f);
     
     m_shaderProgram.Use();
 
@@ -83,6 +88,16 @@ void Geometry4DApplication::Render()
     m_shaderProgram.SetUniform(m_worldMatrixUniform, worldMatrix);
 
     m_cube.DrawSubmesh(0);
+
+    RenderGUI();
+}
+
+void Geometry4DApplication::Cleanup()
+{
+    // Cleanup DearImGUI
+    m_imGui.Cleanup();
+
+    Application::Cleanup();
 }
 
 void Geometry4DApplication::InitializeGeometry()
@@ -97,59 +112,50 @@ void Geometry4DApplication::InitializeGeometry()
     //VBO
     //Top Square
     vertices.push_back(Vertex(glm::vec3(-1, 1, -1)));
+    vertices[0].normal = glm::normalize(vertices[0].position);
     vertices.push_back(Vertex(glm::vec3(1, 1, -1)));
+    vertices[1].normal = glm::normalize(vertices[1].position);
     vertices.push_back(Vertex(glm::vec3(1, 1, 1)));
+    vertices[2].normal = glm::normalize(vertices[2].position);
     vertices.push_back(Vertex(glm::vec3(-1, 1, 1)));
+    vertices[3].normal = glm::normalize(vertices[3].position);
 
     //Bottom Square
     vertices.push_back(Vertex(glm::vec3(-1, -1, -1)));
+    vertices[4].normal = glm::normalize(vertices[4].position);
     vertices.push_back(Vertex(glm::vec3(1, -1, -1)));
+    vertices[5].normal = glm::normalize(vertices[5].position);
     vertices.push_back(Vertex(glm::vec3(1, -1, 1)));
+    vertices[6].normal = glm::normalize(vertices[6].position);
     vertices.push_back(Vertex(glm::vec3(-1, -1, 1)));
+    vertices[7].normal = glm::normalize(vertices[7].position);
 
     std::vector<glm::vec3> normals(vertices.size(), glm::vec3(0.0f));
 
     //EBO
     //Top Square Checked
     indices.insert(indices.end(), { 0, 2, 1 });
-    ComputeNormals(vertices[0], vertices[2], vertices[1]);
     indices.insert(indices.end(), { 0, 3, 2 });
-    ComputeNormals(vertices[0], vertices[3], vertices[2]);
 
     //Right Square Checked
     indices.insert(indices.end(), { 1, 2, 5 });
-    ComputeNormals(vertices[1], vertices[2], vertices[5]);
     indices.insert(indices.end(), { 2, 6, 5 });
-    ComputeNormals(vertices[2], vertices[6], vertices[5]);
 
     //Left Square Checked
     indices.insert(indices.end(), { 0, 7, 3 });
-    ComputeNormals(vertices[0], vertices[7], vertices[3]);
     indices.insert(indices.end(), { 0, 4, 7 });
-    ComputeNormals(vertices[0], vertices[4], vertices[7]);
 
     //Back Square 
     indices.insert(indices.end(), { 2, 3, 7 });
-    ComputeNormals(vertices[2], vertices[3], vertices[7]);
     indices.insert(indices.end(), { 2, 7, 6 });
-    ComputeNormals(vertices[2], vertices[7], vertices[6]);
 
     //Front Square
     indices.insert(indices.end(), { 0, 1, 5 });
-    ComputeNormals(vertices[0], vertices[1], vertices[5]);
     indices.insert(indices.end(), { 0, 5, 4 });
-    ComputeNormals(vertices[0], vertices[5], vertices[4]);
 
     //Bottom Square Checked
     indices.insert(indices.end(), { 4, 5, 7 });
-    ComputeNormals(vertices[4], vertices[5], vertices[7]);
     indices.insert(indices.end(), { 5, 6, 7 });
-    ComputeNormals(vertices[5], vertices[6], vertices[7]);
-
-    // After combining all face normals, normalize once
-    for (int i = 0; i < vertices.size(); i++) {
-        vertices[i].normal = glm::normalize(vertices[i].normal);
-    }
 
     m_cube.AddSubmesh<Vertex, unsigned short, VertexFormat::LayoutIterator>(Drawcall::Primitive::Triangles, vertices, indices,
         vertexFormat.LayoutBegin(static_cast<int>(vertices.size()), true /* interleaved */), vertexFormat.LayoutEnd());
@@ -161,13 +167,13 @@ void Geometry4DApplication::InitializeShaders()
     // Load and compile vertex shader
     Shader vertexShader(Shader::VertexShader);
 
-    //LoadAndCompileShader(vertexShader, "shaders/shader.vert");
-    LoadAndCompileShader(vertexShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.vert");
+    LoadAndCompileShader(vertexShader, "shaders/shader.vert");
+    //LoadAndCompileShader(vertexShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.vert");
 
     // Load and compile fragment shader
     Shader fragmentShader(Shader::FragmentShader);
-    //LoadAndCompileShader(fragmentShader, "shaders/shader.frag");
-    LoadAndCompileShader(fragmentShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.frag");
+    LoadAndCompileShader(fragmentShader, "shaders/shader.frag");
+    //LoadAndCompileShader(fragmentShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.frag");
 
 
     // Attach shaders and link
@@ -176,6 +182,21 @@ void Geometry4DApplication::InitializeShaders()
         std::cout << "Error linking shaders" << std::endl;
         return;
     }
+}
+
+void Geometry4DApplication::InitializeCamera()
+{
+    // Create the main camera
+    std::shared_ptr<Camera> camera = std::make_shared<Camera>();
+    camera->SetViewMatrix(glm::vec3(0.0f, 0.0f, -4.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));
+    float fov = 1.0f;
+    camera->SetPerspectiveProjectionMatrix(fov, GetMainWindow().GetAspectRatio(), 0.1f, 100.0f);
+
+    // Create a scene node for the camera
+    std::shared_ptr<SceneCamera> sceneCamera = std::make_shared<SceneCamera>("camera", camera);
+
+    // Set the camera scene node to be controlled by the camera controller
+    m_cameraController.SetCamera(sceneCamera);
 }
 
 void Geometry4DApplication::LoadAndCompileShader(Shader& shader, const char* path)
@@ -207,6 +228,28 @@ void Geometry4DApplication::LoadAndCompileShader(Shader& shader, const char* pat
     }
 }
 
+void Geometry4DApplication::RenderGUI()
+{
+    m_imGui.BeginFrame();
+
+    //m_cameraController.DrawGUI(m_imGui);
+
+    if (auto window = m_imGui.UseWindow("Scene parameters"))
+    {
+        glm::mat4 viewMatrix = m_cameraController.GetCamera()->GetCamera()->GetViewMatrix();
+
+        if (ImGui::TreeNodeEx("Cube", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            // Add controls for cube parameters
+            ImGui::DragFloat3("Center", &m_cubeCenter[0], 0.1f);
+            ImGui::DragFloat3("Rotation Velocity", &m_rotationVelocities[0], 0.0f);
+            ImGui::TreePop();
+        }
+    }
+
+    m_imGui.EndFrame();
+}
+
 void Geometry4DApplication::ComputeNormals(Vertex& v1, Vertex& v2, Vertex& v3)
 {
     glm::vec3 pos1 = v1.position;
@@ -221,4 +264,5 @@ void Geometry4DApplication::ComputeNormals(Vertex& v1, Vertex& v2, Vertex& v3)
     v1.normal += faceNormal;
     v2.normal += faceNormal;
     v3.normal += faceNormal;
+
 }
