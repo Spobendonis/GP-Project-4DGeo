@@ -11,13 +11,18 @@
 #include <sstream>
 #include <iostream>
 #include <vector>
+#include <filesystem>
 #include <glm/gtx/transform.hpp>
+#include <glm/ext.hpp>
 
 Geometry4DApplication::Geometry4DApplication()
     : Application(1024, 1024, "4D-Geometry demo")
     , m_colorUniform(-1)
     , m_worldMatrixUniform(-1)
     , m_viewProjMatrixUniform(-1)
+    , m_xRotation(0)
+    , m_yRotation(0)
+    , m_zRotation(0)
 {
 }
 
@@ -32,6 +37,9 @@ void Geometry4DApplication::Initialize()
     m_worldMatrixUniform = m_shaderProgram.GetUniformLocation("WorldMatrix");
     m_viewProjMatrixUniform = m_shaderProgram.GetUniformLocation("ViewProjMatrix");
 
+    //Triangles should wind clock-wise
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
 }
 
 void Geometry4DApplication::Update()
@@ -55,16 +63,17 @@ void Geometry4DApplication::Render()
 
     GetDevice().Clear(true, Color(0.0f, 0.0f, 0.0f, 1.0f), true, 1.0f);
 
-    //float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-    //float g = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-    //float b = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-
-    //Color color = Color(r, g, b);
-
     Color color = Color(1, 1, 1);
 
-    glm::mat4 worldMatrix = glm::scale(glm::vec3(0.1f)) * glm::mat4(1.0f);
+    //rotating by the given amount
+    m_xRotation += 1.0f/1000;
 
+    glm::mat4 worldMatrix =
+        glm::rotate(m_xRotation, glm::vec3(0, 1, 0)) *
+        glm::rotate(m_yRotation, glm::vec3(0, 0, 1)) *
+        glm::rotate(m_zRotation, glm::vec3(1, 0, 0)) *
+        glm::scale(glm::vec3(0.1f)) * glm::mat4(1.0f);
+    
     m_shaderProgram.Use();
 
     m_shaderProgram.SetUniform(m_viewProjMatrixUniform, m_camera.GetViewProjectionMatrix());
@@ -78,14 +87,8 @@ void Geometry4DApplication::Render()
 
 void Geometry4DApplication::InitializeGeometry()
 {
-    struct Vertex
-    {
-        Vertex() = default;
-        Vertex(const glm::vec3& position) : position(position) {}
-        glm::vec3 position;
-    };
-
     VertexFormat vertexFormat;
+    vertexFormat.AddVertexAttribute<float>(3);
     vertexFormat.AddVertexAttribute<float>(3);
 
     std::vector<Vertex> vertices;
@@ -93,42 +96,60 @@ void Geometry4DApplication::InitializeGeometry()
 
     //VBO
     //Top Square
-    vertices.emplace_back(glm::vec3(-1, 1, -1));
-    vertices.emplace_back(glm::vec3(1, 1, -1));
-    vertices.emplace_back(glm::vec3(1, 1, 1));
-    vertices.emplace_back(glm::vec3(-1, 1, 1));
+    vertices.push_back(Vertex(glm::vec3(-1, 1, -1)));
+    vertices.push_back(Vertex(glm::vec3(1, 1, -1)));
+    vertices.push_back(Vertex(glm::vec3(1, 1, 1)));
+    vertices.push_back(Vertex(glm::vec3(-1, 1, 1)));
 
     //Bottom Square
-    vertices.emplace_back(glm::vec3(-1, -1, -1));
-    vertices.emplace_back(glm::vec3(1, -1, -1));
-    vertices.emplace_back(glm::vec3(1, -1, 1));
-    vertices.emplace_back(glm::vec3(-1, -1, 1));
+    vertices.push_back(Vertex(glm::vec3(-1, -1, -1)));
+    vertices.push_back(Vertex(glm::vec3(1, -1, -1)));
+    vertices.push_back(Vertex(glm::vec3(1, -1, 1)));
+    vertices.push_back(Vertex(glm::vec3(-1, -1, 1)));
 
+    std::vector<glm::vec3> normals(vertices.size(), glm::vec3(0.0f));
 
     //EBO
-    //Top Square
-    indices.insert(indices.end(), { 0, 1, 2 });
-    indices.insert(indices.end(), { 1, 2, 3 });
+    //Top Square Checked
+    indices.insert(indices.end(), { 0, 2, 1 });
+    ComputeNormals(vertices[0], vertices[2], vertices[1]);
+    indices.insert(indices.end(), { 0, 3, 2 });
+    ComputeNormals(vertices[0], vertices[3], vertices[2]);
 
-    //Right Square
+    //Right Square Checked
     indices.insert(indices.end(), { 1, 2, 5 });
-    indices.insert(indices.end(), { 2, 5, 6 });
+    ComputeNormals(vertices[1], vertices[2], vertices[5]);
+    indices.insert(indices.end(), { 2, 6, 5 });
+    ComputeNormals(vertices[2], vertices[6], vertices[5]);
 
-    //Left Square
-    indices.insert(indices.end(), { 0, 3, 4 });
-    indices.insert(indices.end(), { 3, 5, 7 });
+    //Left Square Checked
+    indices.insert(indices.end(), { 0, 7, 3 });
+    ComputeNormals(vertices[0], vertices[7], vertices[3]);
+    indices.insert(indices.end(), { 0, 4, 7 });
+    ComputeNormals(vertices[0], vertices[4], vertices[7]);
+
+    //Back Square 
+    indices.insert(indices.end(), { 2, 3, 7 });
+    ComputeNormals(vertices[2], vertices[3], vertices[7]);
+    indices.insert(indices.end(), { 2, 7, 6 });
+    ComputeNormals(vertices[2], vertices[7], vertices[6]);
 
     //Front Square
-    indices.insert(indices.end(), { 2, 3, 6 });
-    indices.insert(indices.end(), { 2, 6, 7 });
+    indices.insert(indices.end(), { 0, 1, 5 });
+    ComputeNormals(vertices[0], vertices[1], vertices[5]);
+    indices.insert(indices.end(), { 0, 5, 4 });
+    ComputeNormals(vertices[0], vertices[5], vertices[4]);
 
-    //Back Square
-    indices.insert(indices.end(), { 0, 1, 4 });
-    indices.insert(indices.end(), { 0, 4, 5 });
-
-    //Bottom Square
-    indices.insert(indices.end(), { 4, 5, 6 });
+    //Bottom Square Checked
+    indices.insert(indices.end(), { 4, 5, 7 });
+    ComputeNormals(vertices[4], vertices[5], vertices[7]);
     indices.insert(indices.end(), { 5, 6, 7 });
+    ComputeNormals(vertices[5], vertices[6], vertices[7]);
+
+    // After combining all face normals, normalize once
+    for (int i = 0; i < vertices.size(); i++) {
+        vertices[i].normal = glm::normalize(vertices[i].normal);
+    }
 
     m_cube.AddSubmesh<Vertex, unsigned short, VertexFormat::LayoutIterator>(Drawcall::Primitive::Triangles, vertices, indices,
         vertexFormat.LayoutBegin(static_cast<int>(vertices.size()), true /* interleaved */), vertexFormat.LayoutEnd());
@@ -140,13 +161,13 @@ void Geometry4DApplication::InitializeShaders()
     // Load and compile vertex shader
     Shader vertexShader(Shader::VertexShader);
 
-    LoadAndCompileShader(vertexShader, "shaders/shader.vert");
-    //LoadAndCompileShader(vertexShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP - Project - 4DGeo\\src\\exercise10\\shaders\\shader.vert");
+    //LoadAndCompileShader(vertexShader, "shaders/shader.vert");
+    LoadAndCompileShader(vertexShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.vert");
 
     // Load and compile fragment shader
     Shader fragmentShader(Shader::FragmentShader);
-    LoadAndCompileShader(fragmentShader, "shaders/shader.frag");
-    //LoadAndCompileShader(fragmentShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP - Project - 4DGeo\\src\\exercise10\\shaders\\shader.frag");
+    //LoadAndCompileShader(fragmentShader, "shaders/shader.frag");
+    LoadAndCompileShader(fragmentShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.frag");
 
 
     // Attach shaders and link
@@ -184,4 +205,20 @@ void Geometry4DApplication::LoadAndCompileShader(Shader& shader, const char* pat
         std::cout << "Error compiling shader: " << path << std::endl;
         std::cout << errors.data() << std::endl;
     }
+}
+
+void Geometry4DApplication::ComputeNormals(Vertex& v1, Vertex& v2, Vertex& v3)
+{
+    glm::vec3 pos1 = v1.position;
+    glm::vec3 pos2 = v2.position;
+    glm::vec3 pos3 = v3.position;
+
+    glm::vec3 edge1 = pos2 - pos1;
+    glm::vec3 edge2 = pos3 - pos1;
+
+    glm::vec3 faceNormal = glm::normalize(glm::cross(edge1, edge2));
+
+    v1.normal += faceNormal;
+    v2.normal += faceNormal;
+    v3.normal += faceNormal;
 }
