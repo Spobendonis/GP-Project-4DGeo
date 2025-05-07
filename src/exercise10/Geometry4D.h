@@ -7,15 +7,6 @@
 #include <ituGL/utils/DearImGui.h>
 #include <glm/glm.hpp>
 
-struct Vertex
-{
-    Vertex() = default;
-    Vertex(const glm::vec3& position) : position(position), normal(glm::vec3(0.0f)) {}
-    Vertex(const glm::vec3& position, const glm::vec3& normal) : position(position), normal(normal) {}
-    glm::vec3 position;
-    glm::vec3 normal;
-};
-
 class Geometry4DApplication : public Application
 {
 public:
@@ -34,7 +25,11 @@ private:
 
     void RenderGUI();
     void LoadAndCompileShader(Shader& shader, const char* path);
-    void ComputeNormals(Vertex& v1, Vertex& v2, Vertex& v3);
+
+    // 4D transformations
+    glm::mat4 Rotate4D(float xy, float yz, float xz, float xw, float yw, float zw);
+    glm::mat4 Translate4D(glm::vec4 v);
+    glm::mat4 Scale4D(float s);
 
 private:
     DearImGui m_imGui;
@@ -55,13 +50,20 @@ private:
 
     Color m_color;
 
-    float m_xRotation;
+    //Cube Parameters
+    float m_xyRotation;
 
-    float m_yRotation;
+    float m_yzRotation;
 
-    float m_zRotation;
+    float m_xzRotation;
 
-    float m_rotationVelocities[3];
+    float m_xwRotation;
 
-    float m_cubeCenter[3];
+    float m_ywRotation;
+
+    float m_zwRotation;
+
+    float m_rotationVelocities[6];
+
+    float m_cubeCenter[4];
 };
