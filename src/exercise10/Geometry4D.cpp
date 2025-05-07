@@ -232,8 +232,6 @@ void Geometry4DApplication::RenderGUI()
 {
     m_imGui.BeginFrame();
 
-    //m_cameraController.DrawGUI(m_imGui);
-
     if (auto window = m_imGui.UseWindow("Scene parameters"))
     {
         glm::mat4 viewMatrix = m_cameraController.GetCamera()->GetCamera()->GetViewMatrix();
@@ -241,8 +239,8 @@ void Geometry4DApplication::RenderGUI()
         if (ImGui::TreeNodeEx("Cube", ImGuiTreeNodeFlags_DefaultOpen))
         {
             // Add controls for cube parameters
-            ImGui::DragFloat3("Center", &m_cubeCenter[0], 0.1f);
-            ImGui::DragFloat3("Rotation Velocity", &m_rotationVelocities[0], 0.0f);
+            ImGui::SliderFloat3("Center", &m_cubeCenter[0], -5.0f, 5.0f);
+            ImGui::SliderFloat3("Rotation Velocity", &m_rotationVelocities[0], -5.0f, 5.0f);
             ImGui::TreePop();
         }
     }
