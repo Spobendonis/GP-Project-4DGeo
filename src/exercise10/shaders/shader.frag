@@ -9,8 +9,8 @@ uniform vec3 Color;
 
 void main()
 {
-	//float lighting = max(dot(Normal, normalize(vec3(1, 1, -1))), 0.5);
-	float lighting = max(1/VertexW, 0.2);
+	float lighting = max(dot(Normal, normalize(vec3(1, 1, -1))), 0.5);
+	//float lighting = max(1/VertexW, 0.2);
 	//FragColor = vec4(VertexW, 1);
 	FragColor = vec4(Color * lighting, 1);
 }

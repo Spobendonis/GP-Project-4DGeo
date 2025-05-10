@@ -25,11 +25,14 @@ private:
 
     void RenderGUI();
     void LoadAndCompileShader(Shader& shader, const char* path);
+    void ResetState();
+
+    // 4D Meshes
+    void Create4DCube(Mesh* mesh, float size);
+    void Create4DCubeWireframe(Mesh* mesh, float size);
 
     // 4D transformations
     glm::mat4 Rotate4D(float xy, float yz, float xz, float xw, float yw, float zw);
-    glm::mat4 Translate4D(glm::vec4 v);
-    glm::mat4 Scale4D(float s);
 
 private:
     DearImGui m_imGui;
@@ -38,7 +41,11 @@ private:
 
     ShaderProgram m_shaderProgram;
 
-    ShaderProgram::Location m_worldMatrixUniform;
+    ShaderProgram::Location m_worldRotationMatrixUniform;
+
+    ShaderProgram::Location m_worldTranslationVectorUniform;
+
+    ShaderProgram::Location m_worldScaleVectorUniform;
 
     ShaderProgram::Location m_viewProjMatrixUniform;
 
@@ -51,6 +58,8 @@ private:
     Color m_color;
 
     //Cube Parameters
+    float m_scale;
+
     float m_xyRotation;
 
     float m_yzRotation;
