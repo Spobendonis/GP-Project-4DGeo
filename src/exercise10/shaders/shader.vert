@@ -2,9 +2,11 @@
 
 layout (location = 0) in vec4 VertexPosition;
 layout (location = 1) in vec4 VertexNormal;
+layout (location = 2) in vec2 VertexTexCoord;
 
 out vec3 Position;
 out vec3 Normal;
+out vec2 TexCoord;
 
 uniform mat4 WorldRotationMatrix;
 uniform vec4 WorldTranslationVector;
@@ -20,6 +22,8 @@ void main()
 
 	//Treat VertexW as a scale factor 
 	Position = (WorldScaleVector * ((WorldTranslationVector / WorldScaleVector) + (WorldRotationMatrix * (VertexW * VertexPosition)))).xyz;
+
+	TexCoord = VertexTexCoord;
 
 	Normal = normalize((WorldRotationMatrix * VertexNormal).xyz);
 	gl_Position = ViewProjMatrix * vec4(Position, 1.0f);

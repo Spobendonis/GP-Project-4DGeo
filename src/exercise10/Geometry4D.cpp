@@ -1,12 +1,14 @@
 #include "Geometry4D.h"
 #include <ituGL/shader/Shader.h>
 #include <ituGL/shader/ShaderProgram.h>
+#include <ituGL/texture/Texture2DObject.h>
 #include <ituGL/geometry/VertexFormat.h>
 #include <ituGL/camera/Camera.h>
 #include <ituGL/scene/SceneCamera.h>
 #include <ituGL/scene/Transform.h>
 #include <ituGL/application/Window.h>
 #include <imgui.h>
+#include <stb_image.h>
 #include <cassert>
 #include <array>
 #include <fstream>
@@ -22,6 +24,8 @@
 Geometry4DApplication::Geometry4DApplication()
     : Application(1024, 1024, "4D-Geometry demo")
     , m_colorUniform(-1)
+    , m_texture(-1)
+    , m_usingTexture(-1)
     , m_ambientReflectionUniform(-1)
     , m_diffuseReflectionUniform(-1)
     , m_specularReflectionUniform(-1)
@@ -56,6 +60,7 @@ void Geometry4DApplication::Initialize()
     InitializeGeometry();
     InitializeShaders();
     InitializeCamera();
+    InitializeTextures();
     InitializeUniforms();
 
     m_cubeCenter[3] = 1;
@@ -86,9 +91,8 @@ void Geometry4DApplication::Render()
     glm::vec4 white = glm::vec4(1.0f);
     glm::vec4 red = glm::vec4(1.0f, 0, 0, 0);
 
-    float gap = (m_cubeCenter[3] * m_scale * 1.5);
+    float gap = (m_cubeCenter[3] * m_scale * 2.5);
 
-    //rotating by the given amount
     //3D rotations
     m_xyRotation += m_rotationVelocities[0] / 1000;
     m_xzRotation += m_rotationVelocities[2] / 1000;
@@ -113,7 +117,27 @@ void Geometry4DApplication::Render()
     glm::vec4 worldScaleVector = glm::vec4(glm::vec3(m_scale), 1);
 
     m_shaderProgram.Use();
-    
+
+    m_shaderProgram.SetUniform(m_usingTexture, 1);
+
+    switch (m_selectedTexture)
+    {
+        case 0:
+            m_shaderProgram.SetTexture(m_texture, 0, *m_dirtTexture);
+            break;
+        case 1:
+            m_shaderProgram.SetTexture(m_texture, 0, *m_grassTexture);
+            break;
+        case 2:
+            m_shaderProgram.SetTexture(m_texture, 0, *m_rockTexture);
+            break;
+        case 3:
+            m_shaderProgram.SetTexture(m_texture, 0, *m_snowTexture);
+            break;
+    }
+
+    m_shaderProgram.SetUniform(m_colorUniform, white);
+
     m_shaderProgram.SetUniform(m_ambientReflectionUniform, 1.0f);
 
     m_shaderProgram.SetUniform(m_diffuseReflectionUniform, 1.0f);
@@ -123,14 +147,12 @@ void Geometry4DApplication::Render()
     m_shaderProgram.SetUniform(m_specularExponentUniform, 100.0f);
 
     m_shaderProgram.SetUniform(m_viewProjMatrixUniform, m_camera.GetViewProjectionMatrix());
-    
-    m_shaderProgram.SetUniform(m_colorUniform, white);
 
     m_shaderProgram.SetUniform(m_ambientColorUniform, glm::vec3(0.35f)*glm::vec3(white));
 
     m_shaderProgram.SetUniform(m_lightColorUniform, glm::vec3(white));
 
-    m_shaderProgram.SetUniform(m_lightPositionUniform, glm::vec3(1, 10, -1));
+    m_shaderProgram.SetUniform(m_lightPositionUniform, glm::vec3(0, 10, -1));
 
     m_shaderProgram.SetUniform(m_cameraPositionUniform, m_cameraController.GetCamera()->GetTransform()->GetTranslation());
 
@@ -142,9 +164,28 @@ void Geometry4DApplication::Render()
 
     m_cube.DrawSubmesh(0);
 
+    m_shaderProgram.SetUniform(m_usingTexture, 0);
+
     m_shaderProgram.SetUniform(m_colorUniform, red);
 
     m_cube.DrawSubmesh(1);
+
+    worldTranslationVector = glm::vec4(
+        m_cubeCenter[0],
+        m_cubeCenter[1],
+        m_cubeCenter[2],
+        m_cubeCenter[3]
+    );
+
+    m_shaderProgram.SetUniform(m_colorUniform, white);
+
+    m_shaderProgram.SetUniform(m_worldTranslationVectorUniform, worldTranslationVector);
+
+    m_cube.DrawSubmesh(2);
+
+    m_shaderProgram.SetUniform(m_colorUniform, red);
+
+    m_cube.DrawSubmesh(3);
 
     worldTranslationVector = glm::vec4(
         m_cubeCenter[0] + gap,
@@ -157,7 +198,7 @@ void Geometry4DApplication::Render()
 
     m_shaderProgram.SetUniform(m_worldTranslationVectorUniform, worldTranslationVector);
 
-    m_cube.DrawSubmesh(2);
+    m_cube.DrawSubmesh(4);
 
     RenderGUI();
 }
@@ -172,6 +213,8 @@ void Geometry4DApplication::Cleanup()
 
 void Geometry4DApplication::InitializeGeometry()
 {
+    CreateTextured4DCube(&m_cube, 1.0f);
+    Create4DCubeWireframe(&m_cube, 1.0f);
     Create4DCube(&m_cube, 1.0f);
     Create4DCubeWireframe(&m_cube, 1.0f);
     Create4DCubeWireframe(&m_cube, 1.0f);
@@ -182,13 +225,13 @@ void Geometry4DApplication::InitializeShaders()
     // Load and compile vertex shader
     Shader vertexShader(Shader::VertexShader);
 
-    LoadAndCompileShader(vertexShader, "shaders/shader.vert");
-    //LoadAndCompileShader(vertexShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.vert");
+    //LoadAndCompileShader(vertexShader, "shaders/shader.vert");
+    LoadAndCompileShader(vertexShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.vert");
 
     // Load and compile fragment shader
     Shader fragmentShader(Shader::FragmentShader);
-    LoadAndCompileShader(fragmentShader, "shaders/shader.frag");
-    //LoadAndCompileShader(fragmentShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.frag");
+    //LoadAndCompileShader(fragmentShader, "shaders/shader.frag");
+    LoadAndCompileShader(fragmentShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.frag");
 
 
     // Attach shaders and link
@@ -203,7 +246,7 @@ void Geometry4DApplication::InitializeCamera()
 {
     // Create the main camera
     std::shared_ptr<Camera> camera = std::make_shared<Camera>();
-    camera->SetViewMatrix(glm::vec3(0.0f, 1.5f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));
+    camera->SetViewMatrix(glm::vec3(0.0f, 1.5f, -11.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));
     float fov = 1.0f;
     camera->SetPerspectiveProjectionMatrix(fov, GetMainWindow().GetAspectRatio(), 0.1f, 100.0f);
 
@@ -216,7 +259,9 @@ void Geometry4DApplication::InitializeCamera()
 
 void Geometry4DApplication::InitializeUniforms()
 {
-    //Should be in material
+    m_texture = m_shaderProgram.GetUniformLocation("Texture");
+    m_usingTexture = m_shaderProgram.GetUniformLocation("UsingTexture");
+    //Should be in a material
     m_ambientReflectionUniform = m_shaderProgram.GetUniformLocation("AmbientReflection");
     m_diffuseReflectionUniform = m_shaderProgram.GetUniformLocation("DiffuseReflection");
     m_specularReflectionUniform = m_shaderProgram.GetUniformLocation("SpecularReflection");
@@ -231,6 +276,14 @@ void Geometry4DApplication::InitializeUniforms()
     m_worldTranslationVectorUniform = m_shaderProgram.GetUniformLocation("WorldTranslationVector");
     m_worldScaleVectorUniform = m_shaderProgram.GetUniformLocation("WorldScaleVector");
     m_viewProjMatrixUniform = m_shaderProgram.GetUniformLocation("ViewProjMatrix");
+}
+
+void Geometry4DApplication::InitializeTextures()
+{
+    m_dirtTexture = LoadTexture("textures/dirt.png");
+    m_grassTexture = LoadTexture("textures/grass.jpg");
+    m_rockTexture = LoadTexture("textures/rock.jpg");
+    m_snowTexture = LoadTexture("textures/snow.jpg");
 }
 
 void Geometry4DApplication::LoadAndCompileShader(Shader& shader, const char* path)
@@ -292,6 +345,7 @@ void Geometry4DApplication::RenderGUI()
             ImGui::SliderFloat3("3D Rotation Velocity", &m_rotationVelocities[0], -5.0f, 5.0f);
             ImGui::SliderFloat("Center W", &m_cubeCenter[3], 1.0f, 5.0f);
             ImGui::SliderFloat3("4D Rotation Velocity", &m_rotationVelocities[3], -5.0f, 5.0f);
+            ImGui::Combo("Texture", &m_selectedTexture, m_textureList, IM_ARRAYSIZE(m_textureList));
             ImGui::TreePop();
         }
     }
@@ -299,39 +353,192 @@ void Geometry4DApplication::RenderGUI()
     m_imGui.EndFrame();
 }
 
-void Geometry4DApplication::Create4DCube(Mesh* mesh, float size)
+void Geometry4DApplication::CreateTextured4DCube(Mesh* mesh, float size)
 {
+    //In order to properly texture the cube, duplicate vertices are needed with unique Texture Coordinates
     VertexFormat vertexFormat;
     vertexFormat.AddVertexAttribute<float>(4);
     vertexFormat.AddVertexAttribute<float>(4);
+    vertexFormat.AddVertexAttribute<float>(2);
 
     std::vector<Vertex> vertices;
     std::vector<unsigned short> indices;
 
     //VBO
-//Top Square
-    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, -size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, -size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, size / 2, -size / 2)));
+    vertices = {
+        //Top Square
+        Vertex(glm::vec4(-size / 2, size / 2, -size / 2, -size / 2), glm::vec2(0, 0)),
+        Vertex(glm::vec4(size / 2, size / 2, -size / 2, -size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(size / 2, size / 2, size / 2, -size / 2), glm::vec2(1, 1)),
+        Vertex(glm::vec4(-size / 2, size / 2, size / 2, -size / 2), glm::vec2(1, 0)),
+        //4D Top Square
+        Vertex(glm::vec4(-size / 2, size / 2, -size / 2, size / 2), glm::vec2(1, 1)),
+        Vertex(glm::vec4(size / 2, size / 2, -size / 2, size / 2), glm::vec2(1, 0)),
+        Vertex(glm::vec4(size / 2, size / 2, size / 2, size / 2), glm::vec2(0, 0)),
+        Vertex(glm::vec4(-size / 2, size / 2, size / 2, size / 2), glm::vec2(0, 1)),
 
-    //Bottom Square
-    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, -size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, size / 2, -size / 2)));
+        //Left Square
+        Vertex(glm::vec4(size / 2, size / 2, -size / 2, -size / 2), glm::vec2(0, 0)),
+        Vertex(glm::vec4(size / 2, size / 2, size / 2, -size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(size / 2, -size / 2, -size / 2, -size / 2), glm::vec2(1, 0)),
+        Vertex(glm::vec4(size / 2, -size / 2, size / 2, -size / 2), glm::vec2(1, 1)),
+        //4D Left Square
+        Vertex(glm::vec4(size / 2, size / 2, -size / 2, size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(size / 2, size / 2, size / 2, size / 2), glm::vec2(0, 0)),
+        Vertex(glm::vec4(size / 2, -size / 2, -size / 2, size / 2), glm::vec2(1, 1)),
+        Vertex(glm::vec4(size / 2, -size / 2, size / 2, size / 2), glm::vec2(1, 0)),
 
-    //Top Square
-    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, -size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, -size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, size / 2, size / 2)));
+        //Right Square
+        Vertex(glm::vec4(-size / 2, size / 2, -size / 2, -size / 2), glm::vec2(0, 0)),
+        Vertex(glm::vec4(-size / 2, size / 2, size / 2, -size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, -size / 2), glm::vec2(1, 0)),
+        Vertex(glm::vec4(-size / 2, -size / 2, size / 2, -size / 2), glm::vec2(1, 1)),
+        //4D Right Square
+        Vertex(glm::vec4(-size / 2, size / 2, -size / 2, size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(-size / 2, size / 2, size / 2, size / 2), glm::vec2(0, 0)),
+        Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, size / 2), glm::vec2(1, 1)),
+        Vertex(glm::vec4(-size / 2, -size / 2, size / 2, size / 2), glm::vec2(1, 0)),
 
-    //Bottom Square
-    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, -size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, size / 2, size / 2)));
+        //Front Square
+        Vertex(glm::vec4(-size / 2, size / 2, -size / 2, -size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, -size / 2), glm::vec2(1, 1)),
+        Vertex(glm::vec4(size / 2, size / 2, -size / 2, -size / 2), glm::vec2(1, 0)),
+        Vertex(glm::vec4(size / 2, -size / 2, -size / 2, -size / 2), glm::vec2(0, 0)),
+        //4D Front Square
+        Vertex(glm::vec4(-size / 2, size / 2, -size / 2, size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, size / 2), glm::vec2(1, 1)),
+        Vertex(glm::vec4(size / 2, size / 2, -size / 2, size / 2), glm::vec2(1, 0)),
+        Vertex(glm::vec4(size / 2, -size / 2, -size / 2, size / 2), glm::vec2(0, 0)),
+
+        //Back Square
+        Vertex(glm::vec4(-size / 2, size / 2, size / 2, -size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(-size / 2, -size / 2, size / 2, -size / 2), glm::vec2(1, 1)),
+        Vertex(glm::vec4(size / 2, size / 2, size / 2, -size / 2), glm::vec2(1, 0)),
+        Vertex(glm::vec4(size / 2, -size / 2, size / 2, -size / 2), glm::vec2(0, 0)),
+        //4D Back Square
+        Vertex(glm::vec4(-size / 2, size / 2, size / 2, size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(-size / 2, -size / 2, size / 2, size / 2), glm::vec2(1, 1)),
+        Vertex(glm::vec4(size / 2, size / 2, size / 2, size / 2), glm::vec2(1, 0)),
+        Vertex(glm::vec4(size / 2, -size / 2, size / 2, size / 2), glm::vec2(0, 0)),
+
+        //Bottom Square
+        Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, -size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(size / 2, -size / 2, -size / 2, -size / 2), glm::vec2(1, 1)),
+        Vertex(glm::vec4(size / 2, -size / 2, size / 2, -size / 2), glm::vec2(1, 0)),
+        Vertex(glm::vec4(-size / 2, -size / 2, size / 2, -size / 2), glm::vec2(0, 0)),
+        //4D Bottom Square
+        Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, size / 2), glm::vec2(1, 0)),
+        Vertex(glm::vec4(size / 2, -size / 2, -size / 2, size / 2), glm::vec2(0, 0)),
+        Vertex(glm::vec4(size / 2, -size / 2, size / 2, size / 2), glm::vec2(0, 1)),
+        Vertex(glm::vec4(-size / 2, -size / 2, size / 2, size / 2), glm::vec2(1, 1)),
+    };
+
+
+
+
+    for (int i = 0; i < vertices.size(); i++) {
+        vertices[i].normal = glm::normalize(vertices[i].position);
+    }
+
+    //EBO
+    indices = {
+        //Top Square
+        0, 1, 3,
+        1, 2, 3,
+        4, 5, 7,
+        5, 6, 7,
+        //Left Square
+        8, 10, 11,
+        8, 11, 9,
+        12, 14, 15,
+        12, 15, 13,
+        //Right Square
+        16, 17, 18,
+        17, 18, 19,
+        20, 21, 22,
+        21, 22, 23,
+        //Back Square
+        24, 25, 26,
+        25, 26, 27,
+        28, 29, 30,
+        29, 30, 31,
+        //Front Square
+        32, 33, 35,
+        32, 35, 34,
+        36, 37, 39,
+        36, 39, 38,
+        //Bottom Square
+        40, 41, 42,
+        40, 42, 43,
+        44, 45, 46,
+        44, 46, 47,
+        //Connect the Top
+        0, 4, 3,
+        4, 3, 7,
+        0, 1, 5,
+        0, 5, 4,
+        1, 2, 6,
+        1, 6, 5,
+        2, 3, 7,
+        2, 7, 6,
+        //Connect the Bottom
+        40, 44, 43,
+        44, 43, 47,
+        40, 41, 45,
+        40, 45, 44,
+        41, 42, 46,
+        41, 46, 45,
+        42, 43, 47,
+        42, 47, 46,
+        //Connect the Left
+        8, 10, 14,
+        8, 14, 12,
+        9, 11, 15,
+        9, 15, 13,
+        //Connect the Right
+        16, 18, 22,
+        16, 22, 20,
+        17, 19, 23,
+        17, 23, 21,
+    };
+
+    mesh->AddSubmesh<Vertex, unsigned short, VertexFormat::LayoutIterator>(Drawcall::Primitive::Triangles, vertices, indices,
+        vertexFormat.LayoutBegin(static_cast<int>(vertices.size()), true /* interleaved */), vertexFormat.LayoutEnd());
+}
+
+void Geometry4DApplication::Create4DCube(Mesh* mesh, float size)
+{
+    VertexFormat vertexFormat;
+    vertexFormat.AddVertexAttribute<float>(4);
+    vertexFormat.AddVertexAttribute<float>(4);
+    vertexFormat.AddVertexAttribute<float>(2);
+
+    std::vector<Vertex> vertices;
+    std::vector<unsigned short> indices;
+
+    //VBO
+    vertices = {
+        //Top Square
+        Vertex(glm::vec4(-size / 2, size / 2, -size / 2, -size / 2)),
+        Vertex(glm::vec4(size / 2, size / 2, -size / 2, -size / 2)),
+        Vertex(glm::vec4(size / 2, size / 2, size / 2, -size / 2)),
+        Vertex(glm::vec4(-size / 2, size / 2, size / 2, -size / 2)),
+        //Bottom Square
+        Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, -size / 2)),
+        Vertex(glm::vec4(size / 2, -size / 2, -size / 2, -size / 2)),
+        Vertex(glm::vec4(size / 2, -size / 2, size / 2, -size / 2)),
+        Vertex(glm::vec4(-size / 2, -size / 2, size / 2, -size / 2)),
+        //4D Top Square
+        Vertex(glm::vec4(-size / 2, size / 2, -size / 2, size / 2)),
+        Vertex(glm::vec4(size / 2, size / 2, -size / 2, size / 2)),
+        Vertex(glm::vec4(size / 2, size / 2, size / 2, size / 2)),
+        Vertex(glm::vec4(-size / 2, size / 2, size / 2, size / 2)),
+        //4D Bottom Square
+        Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, size / 2)),
+        Vertex(glm::vec4(size / 2, -size / 2, -size / 2, size / 2)),
+        Vertex(glm::vec4(size / 2, -size / 2, size / 2, size / 2)),
+        Vertex(glm::vec4(-size / 2, -size / 2, size / 2, size / 2))
+    };
 
     for (int i = 0; i < vertices.size(); i++) {
         vertices[i].normal = glm::normalize(vertices[i].position);
@@ -408,34 +615,35 @@ void Geometry4DApplication::Create4DCubeWireframe(Mesh* mesh, float size)
     VertexFormat vertexFormat;
     vertexFormat.AddVertexAttribute<float>(4);
     vertexFormat.AddVertexAttribute<float>(4);
+    vertexFormat.AddVertexAttribute<float>(2);
 
     std::vector<Vertex> vertices;
     std::vector<unsigned short> indices;
 
     //VBO
-    //Top Square
-    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, -size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, -size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, size / 2, -size / 2)));
+    vertices = {
+        //Top Square
+        Vertex(glm::vec4(-size / 2, size / 2, -size / 2, -size / 2)),
+        Vertex(glm::vec4(size / 2, size / 2, -size / 2, -size / 2)),
+        Vertex(glm::vec4(size / 2, size / 2, size / 2, -size / 2)),
+        Vertex(glm::vec4(-size / 2, size / 2, size / 2, -size / 2)),
+        //Bottom Square
+        Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, -size / 2)),
+        Vertex(glm::vec4(size / 2, -size / 2, -size / 2, -size / 2)),
+        Vertex(glm::vec4(size / 2, -size / 2, size / 2, -size / 2)),
+        Vertex(glm::vec4(-size / 2, -size / 2, size / 2, -size / 2)),
+        //4D Top Square
+        Vertex(glm::vec4(-size / 2, size / 2, -size / 2, size / 2)),
+        Vertex(glm::vec4(size / 2, size / 2, -size / 2, size / 2)),
+        Vertex(glm::vec4(size / 2, size / 2, size / 2, size / 2)),
+        Vertex(glm::vec4(-size / 2, size / 2, size / 2, size / 2)),
+        //4D Bottom Square
+        Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, size / 2)),
+        Vertex(glm::vec4(size / 2, -size / 2, -size / 2, size / 2)),
+        Vertex(glm::vec4(size / 2, -size / 2, size / 2, size / 2)),
+        Vertex(glm::vec4(-size / 2, -size / 2, size / 2, size / 2))
+    };
 
-    //Bottom Square
-    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, -size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, size / 2, -size / 2)));
-    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, size / 2, -size / 2)));
-
-    //Top Square
-    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, -size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, -size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, size / 2, size / 2)));
-
-    //Bottom Square
-    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, -size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, size / 2, size / 2)));
-    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, size / 2, size / 2)));
 
     for (int i = 0; i < vertices.size(); i++) {
         vertices[i].normal = glm::normalize(vertices[i].position);
@@ -532,4 +740,27 @@ glm::mat4 Geometry4DApplication::Rotate4D(float xy, float yz, float xz, float xw
     glm::mat4 rZW = glm::make_mat4(mZW);
 
     return rXY * rXZ * rYZ * rXW * rYW * rZW;
+}
+
+std::shared_ptr<Texture2DObject> Geometry4DApplication::LoadTexture(const char* path)
+{
+    std::shared_ptr<Texture2DObject> texture = std::make_shared<Texture2DObject>();
+
+    int width = 0;
+    int height = 0;
+    int components = 0;
+
+    // Load the texture data here
+    unsigned char* data = stbi_load(path, &width, &height, &components, 4);
+
+    texture->Bind();
+    texture->SetImage(0, width, height, TextureObject::FormatRGBA, TextureObject::InternalFormatRGBA, std::span<const unsigned char>(data, width * height * 4));
+
+    // Generate mipmaps
+    texture->GenerateMipmap();
+
+    // Release texture data
+    stbi_image_free(data);
+
+    return texture;
 }

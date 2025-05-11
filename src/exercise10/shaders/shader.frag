@@ -2,6 +2,7 @@
 
 in vec3 Position;
 in vec3 Normal;
+in vec2 TexCoord;
 
 out vec4 FragColor;
 
@@ -17,6 +18,10 @@ uniform vec3 LightColor;
 uniform vec3 LightPosition;
 uniform vec3 CameraPosition;
 
+uniform sampler2D Texture;
+uniform bool UsingTexture;
+
+//Blinn-Phong stuff
 vec3 GetAmbientReflection(vec3 objectColor)
 {
 	return AmbientColor * AmbientReflection * objectColor;
@@ -48,5 +53,9 @@ void main()
 	vec3 normalVector = normalize(Normal);
 	//paints the verices with the normal
 	//FragColor = vec4((objectColor.rgb * normalVector).xyz, 1.0f);
-	FragColor = vec4(GetBlinnPhongReflection(objectColor.rgb, lightVector, viewVector, normalVector), 1.0f);
+	vec4 tColor = vec4(1.0f);
+	if (UsingTexture) {
+		tColor = texture(Texture, TexCoord);
+	}
+	FragColor = vec4(GetBlinnPhongReflection(objectColor.rgb * tColor.rgb, lightVector, viewVector, normalVector), 1.0f);
 }
