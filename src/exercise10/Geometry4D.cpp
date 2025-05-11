@@ -4,11 +4,13 @@
 #include <ituGL/geometry/VertexFormat.h>
 #include <ituGL/camera/Camera.h>
 #include <ituGL/scene/SceneCamera.h>
+#include <ituGL/scene/Transform.h>
 #include <ituGL/application/Window.h>
 #include <imgui.h>
 #include <cassert>
 #include <array>
 #include <fstream>
+#include <string>
 #include <sstream>
 #include <iostream>
 #include <vector>
@@ -20,6 +22,14 @@
 Geometry4DApplication::Geometry4DApplication()
     : Application(1024, 1024, "4D-Geometry demo")
     , m_colorUniform(-1)
+    , m_ambientReflectionUniform(-1)
+    , m_diffuseReflectionUniform(-1)
+    , m_specularReflectionUniform(-1)
+    , m_specularExponentUniform(-1)
+    , m_ambientColorUniform(-1)
+    , m_lightColorUniform(-1)
+    , m_lightPositionUniform(-1)
+    , m_cameraPositionUniform(-1)
     , m_worldRotationMatrixUniform(-1)
     , m_worldTranslationVectorUniform(-1)
     , m_worldScaleVectorUniform(-1)
@@ -46,20 +56,14 @@ void Geometry4DApplication::Initialize()
     InitializeGeometry();
     InitializeShaders();
     InitializeCamera();
+    InitializeUniforms();
 
     m_cubeCenter[3] = 1;
-
-    m_colorUniform = m_shaderProgram.GetUniformLocation("Color");
-    m_worldRotationMatrixUniform = m_shaderProgram.GetUniformLocation("WorldRotationMatrix");
-    m_worldTranslationVectorUniform = m_shaderProgram.GetUniformLocation("WorldTranslationVector");
-    m_worldScaleVectorUniform = m_shaderProgram.GetUniformLocation("WorldScaleVector");
-    m_viewProjMatrixUniform = m_shaderProgram.GetUniformLocation("ViewProjMatrix");
 
     //Triangles should wind clock-wise
     //glEnable(GL_CULL_FACE);
     //glCullFace(GL_BACK);
     glEnable(GL_DEPTH_TEST);
-
 }
 
 void Geometry4DApplication::Update()
@@ -79,8 +83,8 @@ void Geometry4DApplication::Render()
 
     GetDevice().Clear(true, Color(0.0f, 0.0f, 0.0f, 1.0f), true, 1.0f);
 
-    Color white = Color(1, 1, 1);
-    Color red = Color(1, 0, 0);
+    glm::vec4 white = glm::vec4(1.0f);
+    glm::vec4 red = glm::vec4(1.0f, 0, 0, 0);
 
     float gap = (m_cubeCenter[3] * m_scale * 1.5);
 
@@ -109,10 +113,26 @@ void Geometry4DApplication::Render()
     glm::vec4 worldScaleVector = glm::vec4(glm::vec3(m_scale), 1);
 
     m_shaderProgram.Use();
+    
+    m_shaderProgram.SetUniform(m_ambientReflectionUniform, 1.0f);
+
+    m_shaderProgram.SetUniform(m_diffuseReflectionUniform, 1.0f);
+    
+    m_shaderProgram.SetUniform(m_specularReflectionUniform, 1.0f);
+    
+    m_shaderProgram.SetUniform(m_specularExponentUniform, 100.0f);
 
     m_shaderProgram.SetUniform(m_viewProjMatrixUniform, m_camera.GetViewProjectionMatrix());
     
-    m_shaderProgram.SetUniform(m_colorUniform, static_cast<glm::vec3>(white));
+    m_shaderProgram.SetUniform(m_colorUniform, white);
+
+    m_shaderProgram.SetUniform(m_ambientColorUniform, glm::vec3(0.35f)*glm::vec3(white));
+
+    m_shaderProgram.SetUniform(m_lightColorUniform, glm::vec3(white));
+
+    m_shaderProgram.SetUniform(m_lightPositionUniform, glm::vec3(1, 10, -1));
+
+    m_shaderProgram.SetUniform(m_cameraPositionUniform, m_cameraController.GetCamera()->GetTransform()->GetTranslation());
 
     m_shaderProgram.SetUniform(m_worldRotationMatrixUniform, worldRotationMatrix);
 
@@ -122,6 +142,9 @@ void Geometry4DApplication::Render()
 
     m_cube.DrawSubmesh(0);
 
+    m_shaderProgram.SetUniform(m_colorUniform, red);
+
+    m_cube.DrawSubmesh(1);
 
     worldTranslationVector = glm::vec4(
         m_cubeCenter[0] + gap,
@@ -130,9 +153,11 @@ void Geometry4DApplication::Render()
         m_cubeCenter[3]
     );
 
+    m_shaderProgram.SetUniform(m_colorUniform, white);
+
     m_shaderProgram.SetUniform(m_worldTranslationVectorUniform, worldTranslationVector);
 
-    m_cube.DrawSubmesh(1);
+    m_cube.DrawSubmesh(2);
 
     RenderGUI();
 }
@@ -157,13 +182,13 @@ void Geometry4DApplication::InitializeShaders()
     // Load and compile vertex shader
     Shader vertexShader(Shader::VertexShader);
 
-    //LoadAndCompileShader(vertexShader, "shaders/shader.vert");
-    LoadAndCompileShader(vertexShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.vert");
+    LoadAndCompileShader(vertexShader, "shaders/shader.vert");
+    //LoadAndCompileShader(vertexShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.vert");
 
     // Load and compile fragment shader
     Shader fragmentShader(Shader::FragmentShader);
-    //LoadAndCompileShader(fragmentShader, "shaders/shader.frag");
-    LoadAndCompileShader(fragmentShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.frag");
+    LoadAndCompileShader(fragmentShader, "shaders/shader.frag");
+    //LoadAndCompileShader(fragmentShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.frag");
 
 
     // Attach shaders and link
@@ -178,7 +203,7 @@ void Geometry4DApplication::InitializeCamera()
 {
     // Create the main camera
     std::shared_ptr<Camera> camera = std::make_shared<Camera>();
-    camera->SetViewMatrix(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));
+    camera->SetViewMatrix(glm::vec3(0.0f, 1.5f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0));
     float fov = 1.0f;
     camera->SetPerspectiveProjectionMatrix(fov, GetMainWindow().GetAspectRatio(), 0.1f, 100.0f);
 
@@ -187,6 +212,25 @@ void Geometry4DApplication::InitializeCamera()
 
     // Set the camera scene node to be controlled by the camera controller
     m_cameraController.SetCamera(sceneCamera);
+}
+
+void Geometry4DApplication::InitializeUniforms()
+{
+    //Should be in material
+    m_ambientReflectionUniform = m_shaderProgram.GetUniformLocation("AmbientReflection");
+    m_diffuseReflectionUniform = m_shaderProgram.GetUniformLocation("DiffuseReflection");
+    m_specularReflectionUniform = m_shaderProgram.GetUniformLocation("SpecularReflection");
+    m_specularExponentUniform = m_shaderProgram.GetUniformLocation("SpecularExponent");
+
+    m_colorUniform = m_shaderProgram.GetUniformLocation("Color");
+    m_ambientColorUniform = m_shaderProgram.GetUniformLocation("AmbientColor");
+    m_lightColorUniform = m_shaderProgram.GetUniformLocation("LightColor");
+    m_lightPositionUniform = m_shaderProgram.GetUniformLocation("LightPosition");
+    m_cameraPositionUniform = m_shaderProgram.GetUniformLocation("CameraPosition");
+    m_worldRotationMatrixUniform = m_shaderProgram.GetUniformLocation("WorldRotationMatrix");
+    m_worldTranslationVectorUniform = m_shaderProgram.GetUniformLocation("WorldTranslationVector");
+    m_worldScaleVectorUniform = m_shaderProgram.GetUniformLocation("WorldScaleVector");
+    m_viewProjMatrixUniform = m_shaderProgram.GetUniformLocation("ViewProjMatrix");
 }
 
 void Geometry4DApplication::LoadAndCompileShader(Shader& shader, const char* path)
@@ -242,6 +286,7 @@ void Geometry4DApplication::RenderGUI()
         if (ImGui::TreeNodeEx("Cube", ImGuiTreeNodeFlags_DefaultOpen))
         {
             // Add controls for cube parameters
+            ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
             ImGui::SliderFloat("Scale", &m_scale, 0.5f, 1.5f);
             ImGui::SliderFloat3("Center", &m_cubeCenter[0], -5.0f, 5.0f);
             ImGui::SliderFloat3("3D Rotation Velocity", &m_rotationVelocities[0], -5.0f, 5.0f);
@@ -256,150 +301,103 @@ void Geometry4DApplication::RenderGUI()
 
 void Geometry4DApplication::Create4DCube(Mesh* mesh, float size)
 {
-    struct Vertex
-    {
-        Vertex() = default;
-        Vertex(const glm::vec4& position) : position(position), normal(glm::vec4(0.0f)) {}
-        Vertex(const glm::vec4& position, const glm::vec4& normal) : position(position), normal(normal) {}
-        glm::vec4 position;
-        glm::vec4 normal;
-    };
-
     VertexFormat vertexFormat;
     vertexFormat.AddVertexAttribute<float>(4);
     vertexFormat.AddVertexAttribute<float>(4);
 
     std::vector<Vertex> vertices;
-    //std::vector<Edge> edges;
     std::vector<unsigned short> indices;
 
     //VBO
-    //Top Square
-    vertices.push_back(Vertex(glm::vec4(-size/2, size/2, -size/2, -size/2)));
-    vertices[0].normal = glm::normalize(vertices[0].position);
-    vertices.push_back(Vertex(glm::vec4(size/2, size/2, -size/2, -size/2)));
-    vertices[1].normal = glm::normalize(vertices[1].position);
-    vertices.push_back(Vertex(glm::vec4(size/2, size/2, size/2, -size/2)));
-    vertices[2].normal = glm::normalize(vertices[2].position);
-    vertices.push_back(Vertex(glm::vec4(-size/2, size/2, size/2, -size/2)));
-    vertices[3].normal = glm::normalize(vertices[3].position);
+//Top Square
+    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, -size / 2, -size / 2)));
+    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, -size / 2, -size / 2)));
+    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, size / 2, -size / 2)));
+    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, size / 2, -size / 2)));
 
     //Bottom Square
-    vertices.push_back(Vertex(glm::vec4(-size/2, -size/2, -size/2, -size/2)));
-    vertices[4].normal = glm::normalize(vertices[4].position);
-    vertices.push_back(Vertex(glm::vec4(size/2, -size/2, -size/2, -size/2)));
-    vertices[5].normal = glm::normalize(vertices[5].position);
-    vertices.push_back(Vertex(glm::vec4(size/2, -size/2, size/2, -size/2)));
-    vertices[6].normal = glm::normalize(vertices[6].position);
-    vertices.push_back(Vertex(glm::vec4(-size/2, -size/2, size/2, -size/2)));
-    vertices[7].normal = glm::normalize(vertices[7].position);
+    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, -size / 2)));
+    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, -size / 2, -size / 2)));
+    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, size / 2, -size / 2)));
+    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, size / 2, -size / 2)));
 
     //Top Square
-    vertices.push_back(Vertex(glm::vec4(-size/2, size/2, -size/2, size/2)));
-    vertices[8].normal = glm::normalize(vertices[8].position);
-    vertices.push_back(Vertex(glm::vec4(size/2, size/2, -size/2, size/2)));
-    vertices[9].normal = glm::normalize(vertices[9].position);
-    vertices.push_back(Vertex(glm::vec4(size/2, size/2, size/2, size/2)));
-    vertices[10].normal = glm::normalize(vertices[10].position);
-    vertices.push_back(Vertex(glm::vec4(-size/2, size/2, size/2, size/2)));
-    vertices[11].normal = glm::normalize(vertices[11].position);
+    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, -size / 2, size / 2)));
+    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, -size / 2, size / 2)));
+    vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, size / 2, size / 2)));
+    vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, size / 2, size / 2)));
 
     //Bottom Square
-    vertices.push_back(Vertex(glm::vec4(-size/2, -size/2, -size/2, size/2)));
-    vertices[12].normal = glm::normalize(vertices[12].position);
-    vertices.push_back(Vertex(glm::vec4(size/2, -size/2, -size/2, size/2)));
-    vertices[13].normal = glm::normalize(vertices[13].position);
-    vertices.push_back(Vertex(glm::vec4(size/2, -size/2, size/2, size/2)));
-    vertices[14].normal = glm::normalize(vertices[14].position);
-    vertices.push_back(Vertex(glm::vec4(-size/2, -size/2, size/2, size/2)));
-    vertices[15].normal = glm::normalize(vertices[15].position);
+    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, size / 2)));
+    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, -size / 2, size / 2)));
+    vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, size / 2, size / 2)));
+    vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, size / 2, size / 2)));
+
+    for (int i = 0; i < vertices.size(); i++) {
+        vertices[i].normal = glm::normalize(vertices[i].position);
+    }
 
     //EBO
-    //Top Square
-    indices.insert(indices.end(), { 0, 2, 1 });
-    indices.insert(indices.end(), { 0, 3, 2 });
-
-    indices.insert(indices.end(), { 8, 10, 9 });
-    indices.insert(indices.end(), { 8, 11, 10 });
-
-    //Right Square
-    indices.insert(indices.end(), { 1, 2, 5 });
-    indices.insert(indices.end(), { 2, 6, 5 });
-
-    indices.insert(indices.end(), { 9, 10, 13 });
-    indices.insert(indices.end(), { 10, 14, 13 });
-
-    //Left Square
-    indices.insert(indices.end(), { 0, 7, 3 });
-    indices.insert(indices.end(), { 0, 4, 7 });
-
-    indices.insert(indices.end(), { 8, 15, 11 });
-    indices.insert(indices.end(), { 8, 12, 15 });
-
-    //Back Square 
-    indices.insert(indices.end(), { 2, 3, 7 });
-    indices.insert(indices.end(), { 2, 7, 6 });
-
-    indices.insert(indices.end(), { 10, 11, 15 });
-    indices.insert(indices.end(), { 10, 15, 14 });
-
-    //Front Square
-    indices.insert(indices.end(), { 0, 1, 5 });
-    indices.insert(indices.end(), { 0, 5, 4 });
-
-    indices.insert(indices.end(), { 8, 9, 13 });
-    indices.insert(indices.end(), { 8, 13, 12 });
-
-    //Bottom Square
-    indices.insert(indices.end(), { 4, 5, 7 });
-    indices.insert(indices.end(), { 5, 6, 7 });
-
-    indices.insert(indices.end(), { 12, 13, 15 });
-    indices.insert(indices.end(), { 13, 14, 15 });
-
-    //Connect the Top
-
-    indices.insert(indices.end(), { 0, 8, 1 });
-    indices.insert(indices.end(), { 8, 9, 1 });
-
-    indices.insert(indices.end(), { 1, 9, 2 });
-    indices.insert(indices.end(), { 9, 10, 2 });
-
-    indices.insert(indices.end(), { 2, 10, 3 });
-    indices.insert(indices.end(), { 10, 11, 3 });
-
-    indices.insert(indices.end(), { 3, 11, 0 });
-    indices.insert(indices.end(), { 11, 8, 0 });
-
-    //Connect the Bottom
-
-    indices.insert(indices.end(), { 4, 5, 12 });
-    indices.insert(indices.end(), { 12, 5, 13 });
-
-    indices.insert(indices.end(), { 5, 6, 13 });
-    indices.insert(indices.end(), { 13, 6, 14 });
-
-    indices.insert(indices.end(), { 6, 7, 14 });
-    indices.insert(indices.end(), { 14, 7, 15 });
-
-    indices.insert(indices.end(), { 7, 4, 15 });
-    indices.insert(indices.end(), { 15, 4, 12 });
-
-    //Connect the Left
-
-    indices.insert(indices.end(), { 0, 8, 12 });
-    indices.insert(indices.end(), { 0, 12, 4 });
-
-    indices.insert(indices.end(), { 3, 11, 15 });
-    indices.insert(indices.end(), { 3, 15, 7 });
-
-    //Connect the Right
-
-    indices.insert(indices.end(), { 1, 9, 13 });
-    indices.insert(indices.end(), { 1, 13, 5 });
-
-    indices.insert(indices.end(), { 2, 10, 14 });
-    indices.insert(indices.end(), { 2, 14, 6 });
+    indices = {
+        //Top Square
+        2, 1, 0,
+        3, 2, 0,
+        10, 9, 8,
+        11, 10, 8,
+        //Right Square
+        5, 1, 2,
+        6, 5, 2,
+        13, 9, 10,
+        14, 13, 10,
+        //Left Square
+        3, 0, 7,
+        0, 4, 7,
+        11, 8, 15,
+        8, 12, 15,
+        //Back Square
+        7, 2, 3,
+        2, 7, 6,
+        15, 10, 11,
+        10, 15, 14,
+        //Front Square
+        5, 0, 1,
+        4, 0, 5,
+        13, 8, 9,
+        8, 13, 12,
+        //Bottom Square
+        7, 4, 5,
+        6, 7, 5,
+        15, 12, 13,
+        14, 15, 13,
+        //Connect the Top
+        0, 8, 1,
+        8, 9, 1,
+        1, 9, 2,
+        9, 10, 2,
+        2, 10, 3,
+        10, 11, 3,
+        3, 11, 0,
+        11, 8, 0,
+        //Connect the Bottom
+        4, 5, 12,
+        5, 13, 12,
+        5, 6, 13,
+        6, 14, 13,
+        6, 7, 14,
+        7, 15, 14,
+        7, 4, 15,
+        4, 12, 15,
+        //Connect the Left
+        0, 8, 12,
+        4, 0, 12,
+        3, 11, 15,
+        7, 3, 15,
+        //Connect the Right
+        1, 9, 13,
+        5, 1, 13,
+        2, 10, 14,
+        6, 2, 14,
+    };
 
     mesh->AddSubmesh<Vertex, unsigned short, VertexFormat::LayoutIterator>(Drawcall::Primitive::Triangles, vertices, indices,
         vertexFormat.LayoutBegin(static_cast<int>(vertices.size()), true /* interleaved */), vertexFormat.LayoutEnd());
@@ -407,64 +405,41 @@ void Geometry4DApplication::Create4DCube(Mesh* mesh, float size)
 
 void Geometry4DApplication::Create4DCubeWireframe(Mesh* mesh, float size)
 {
-    struct Vertex
-    {
-        Vertex() = default;
-        Vertex(const glm::vec4& position) : position(position), normal(glm::vec4(0.0f)) {}
-        Vertex(const glm::vec4& position, const glm::vec4& normal) : position(position), normal(normal) {}
-        glm::vec4 position;
-        glm::vec4 normal;
-    };
-
     VertexFormat vertexFormat;
     vertexFormat.AddVertexAttribute<float>(4);
     vertexFormat.AddVertexAttribute<float>(4);
 
     std::vector<Vertex> vertices;
-    //std::vector<Edge> edges;
     std::vector<unsigned short> indices;
 
     //VBO
     //Top Square
     vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, -size / 2, -size / 2)));
-    vertices[0].normal = glm::normalize(vertices[0].position);
     vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, -size / 2, -size / 2)));
-    vertices[1].normal = glm::normalize(vertices[1].position);
     vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, size / 2, -size / 2)));
-    vertices[2].normal = glm::normalize(vertices[2].position);
     vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, size / 2, -size / 2)));
-    vertices[3].normal = glm::normalize(vertices[3].position);
 
     //Bottom Square
     vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, -size / 2)));
-    vertices[4].normal = glm::normalize(vertices[4].position);
     vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, -size / 2, -size / 2)));
-    vertices[5].normal = glm::normalize(vertices[5].position);
     vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, size / 2, -size / 2)));
-    vertices[6].normal = glm::normalize(vertices[6].position);
     vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, size / 2, -size / 2)));
-    vertices[7].normal = glm::normalize(vertices[7].position);
 
     //Top Square
     vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, -size / 2, size / 2)));
-    vertices[8].normal = glm::normalize(vertices[8].position);
     vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, -size / 2, size / 2)));
-    vertices[9].normal = glm::normalize(vertices[9].position);
     vertices.push_back(Vertex(glm::vec4(size / 2, size / 2, size / 2, size / 2)));
-    vertices[10].normal = glm::normalize(vertices[10].position);
     vertices.push_back(Vertex(glm::vec4(-size / 2, size / 2, size / 2, size / 2)));
-    vertices[11].normal = glm::normalize(vertices[11].position);
 
     //Bottom Square
     vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, -size / 2, size / 2)));
-    vertices[12].normal = glm::normalize(vertices[12].position);
     vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, -size / 2, size / 2)));
-    vertices[13].normal = glm::normalize(vertices[13].position);
     vertices.push_back(Vertex(glm::vec4(size / 2, -size / 2, size / 2, size / 2)));
-    vertices[14].normal = glm::normalize(vertices[14].position);
     vertices.push_back(Vertex(glm::vec4(-size / 2, -size / 2, size / 2, size / 2)));
-    vertices[15].normal = glm::normalize(vertices[15].position);
 
+    for (int i = 0; i < vertices.size(); i++) {
+        vertices[i].normal = glm::normalize(vertices[i].position);
+    }
     //EBO
     indices = {
         0, 1,

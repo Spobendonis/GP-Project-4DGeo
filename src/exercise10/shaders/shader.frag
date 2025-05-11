@@ -1,16 +1,52 @@
 #version 330 core
 
+in vec3 Position;
 in vec3 Normal;
-in float VertexW;
 
 out vec4 FragColor;
 
-uniform vec3 Color;
+uniform vec4 Color;
+
+uniform float AmbientReflection;
+uniform float DiffuseReflection;
+uniform float SpecularReflection;
+uniform float SpecularExponent;
+
+uniform vec3 AmbientColor;
+uniform vec3 LightColor;
+uniform vec3 LightPosition;
+uniform vec3 CameraPosition;
+
+vec3 GetAmbientReflection(vec3 objectColor)
+{
+	return AmbientColor * AmbientReflection * objectColor;
+}
+
+vec3 GetDiffuseReflection(vec3 objectColor, vec3 lightVector, vec3 normalVector)
+{
+	return LightColor * DiffuseReflection * objectColor * max(dot(lightVector, normalVector), 0.0f);
+}
+
+vec3 GetSpecularReflection(vec3 lightVector, vec3 viewVector, vec3 normalVector)
+{
+	vec3 halfVector = normalize(lightVector + viewVector);
+	return LightColor * SpecularReflection * pow(max(dot(halfVector, normalVector), 0.0f), SpecularExponent);
+}
+
+vec3 GetBlinnPhongReflection(vec3 objectColor, vec3 lightVector, vec3 viewVector, vec3 normalVector)
+{
+	return GetAmbientReflection(objectColor)
+		 + GetDiffuseReflection(objectColor, lightVector, normalVector)
+		 + GetSpecularReflection(lightVector, viewVector, normalVector);
+}
 
 void main()
 {
-	float lighting = max(dot(Normal, normalize(vec3(1, 1, -1))), 0.5);
-	//float lighting = max(1/VertexW, 0.2);
-	//FragColor = vec4(VertexW, 1);
-	FragColor = vec4(Color * lighting, 1);
+	vec4 objectColor = Color;
+	vec3 lightVector = normalize(LightPosition - Position);
+	vec3 viewVector = normalize(CameraPosition - Position);
+	vec3 normalVector = normalize(Normal);
+	//paints the verices with the normal
+	//FragColor = vec4((objectColor.rgb * normalVector).xyz, 1.0f);
+	FragColor = vec4(GetBlinnPhongReflection(objectColor.rgb, lightVector, viewVector, normalVector), 1.0f);
 }
