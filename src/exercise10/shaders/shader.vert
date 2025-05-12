@@ -15,12 +15,13 @@ uniform mat4 ViewProjMatrix;
 
 void main()
 {
-	//Get the projection position accounting for 4D
+	// Gets the real 4D location of the Vertex after the transformations
 	vec4 Real4DPosition = WorldTranslationVector + (WorldRotationMatrix * (WorldScaleVector * VertexPosition));
 	
 	float VertexW = Real4DPosition.w;
 
-	//Treat VertexW as a scale factor 
+	// Calculate the 3D Projected position of the Vertex, by treating The Vertex's w as a scale factor.
+	// Since there is a non-uniform scale (vertex scale depends on VertexW and WorldScaleVector), the ignores the scale
 	Position = (WorldScaleVector * ((WorldTranslationVector / WorldScaleVector) + (WorldRotationMatrix * (VertexW * VertexPosition)))).xyz;
 
 	TexCoord = VertexTexCoord;

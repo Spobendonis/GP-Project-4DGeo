@@ -47,12 +47,12 @@ vec3 GetBlinnPhongReflection(vec3 objectColor, vec3 lightVector, vec3 viewVector
 
 void main()
 {
+	// Reuses the code from the Exercise where we implement Blinn-Phong
 	vec4 objectColor = Color;
 	vec3 lightVector = normalize(LightPosition - Position);
 	vec3 viewVector = normalize(CameraPosition - Position);
 	vec3 normalVector = normalize(Normal);
-	//paints the verices with the normal
-	//FragColor = vec4((objectColor.rgb * normalVector).xyz, 1.0f);
+
 	vec4 tColor = vec4(1.0f);
 	if (UsingTexture) {
 		tColor = texture(Texture, TexCoord);

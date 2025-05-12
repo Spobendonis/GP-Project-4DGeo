@@ -63,11 +63,15 @@ void Geometry4DApplication::Initialize()
     InitializeTextures();
     InitializeUniforms();
 
+    // The Perspective-Projection-like approach for rendering 4D objects breaks when edges can cross w = 0
     m_cubeCenter[3] = 1;
 
-    //Triangles should wind clock-wise
+    // Backface Culling disabled, since 3D representation of 4D faces gets flipped during rotations in the w dimension
     //glEnable(GL_CULL_FACE);
-    //glCullFace(GL_BACK);
+    //glCullFace(GL_BACK
+    
+    // Allows fragments to be discarded if their depth value is higher than the depth of the sample it is written to: i.e. don't
+    // Render fragments hidden behind other fragments
     glEnable(GL_DEPTH_TEST);
 }
 
@@ -91,18 +95,23 @@ void Geometry4DApplication::Render()
     glm::vec4 white = glm::vec4(1.0f);
     glm::vec4 red = glm::vec4(1.0f, 0, 0, 0);
 
+    // How far in the x-direction are the various submeshes from each other
     float gap = (m_cubeCenter[3] * m_scale * 2.5);
 
-    //3D rotations
+    // 3D rotations
     m_xyRotation += m_rotationVelocities[0] / 1000;
     m_xzRotation += m_rotationVelocities[2] / 1000;
     m_yzRotation += m_rotationVelocities[1] / 1000;
 
-    //4D rotations
+    // 4D rotations
     m_xwRotation += m_rotationVelocities[3] / 1000;
     m_ywRotation += m_rotationVelocities[4] / 1000;
     m_zwRotation += m_rotationVelocities[5] / 1000;
 
+
+    // The world transformations are seperated into 3 seperate uniforms: Rotation (mat4), Translation (vec4) and Scale (vec4)
+    // This is because glm and glsl doesn't support mat5, which is what would be necessary to implement affine transformations
+    // in 4D. Instead, this is used: Translation + (Rotation * (Scale * VertexPosition4D))
     glm::mat4 worldRotationMatrix =
         Rotate4D(m_xyRotation, m_xzRotation, m_yzRotation, m_xwRotation, m_ywRotation, m_zwRotation);
 
@@ -118,6 +127,7 @@ void Geometry4DApplication::Render()
 
     m_shaderProgram.Use();
 
+    // m_usingTexture holds an int, but is treated like a boolean (since true === 1 and false === 0)
     m_shaderProgram.SetUniform(m_usingTexture, 1);
 
     switch (m_selectedTexture)
@@ -138,6 +148,7 @@ void Geometry4DApplication::Render()
 
     m_shaderProgram.SetUniform(m_colorUniform, white);
 
+    // Blinn-Phong material uniforms
     m_shaderProgram.SetUniform(m_ambientReflectionUniform, 1.0f);
 
     m_shaderProgram.SetUniform(m_diffuseReflectionUniform, 1.0f);
@@ -146,7 +157,7 @@ void Geometry4DApplication::Render()
     
     m_shaderProgram.SetUniform(m_specularExponentUniform, 100.0f);
 
-    m_shaderProgram.SetUniform(m_viewProjMatrixUniform, m_camera.GetViewProjectionMatrix());
+    // Other Blinn-Phong uniforms
 
     m_shaderProgram.SetUniform(m_ambientColorUniform, glm::vec3(0.35f)*glm::vec3(white));
 
@@ -155,6 +166,10 @@ void Geometry4DApplication::Render()
     m_shaderProgram.SetUniform(m_lightPositionUniform, glm::vec3(0, 10, -1));
 
     m_shaderProgram.SetUniform(m_cameraPositionUniform, m_cameraController.GetCamera()->GetTransform()->GetTranslation());
+
+    // End of Blinn-Phong uniforms
+
+    m_shaderProgram.SetUniform(m_viewProjMatrixUniform, m_camera.GetViewProjectionMatrix());
 
     m_shaderProgram.SetUniform(m_worldRotationMatrixUniform, worldRotationMatrix);
 
@@ -213,10 +228,15 @@ void Geometry4DApplication::Cleanup()
 
 void Geometry4DApplication::InitializeGeometry()
 {
+    // Textured Hypercube
     CreateTextured4DCube(&m_cube, 1.0f);
+    // Textured Hypercube Outline
     Create4DCubeWireframe(&m_cube, 1.0f);
+    // Untextured Hypercube 
     Create4DCube(&m_cube, 1.0f);
+    // Untextured Hypercube Outline
     Create4DCubeWireframe(&m_cube, 1.0f);
+    // Hypercube Wireframe
     Create4DCubeWireframe(&m_cube, 1.0f);
 }
 
@@ -225,14 +245,11 @@ void Geometry4DApplication::InitializeShaders()
     // Load and compile vertex shader
     Shader vertexShader(Shader::VertexShader);
 
-    //LoadAndCompileShader(vertexShader, "shaders/shader.vert");
-    LoadAndCompileShader(vertexShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.vert");
+    LoadAndCompileShader(vertexShader, "shaders/shader.vert");
 
     // Load and compile fragment shader
     Shader fragmentShader(Shader::FragmentShader);
-    //LoadAndCompileShader(fragmentShader, "shaders/shader.frag");
-    LoadAndCompileShader(fragmentShader, "C:\\Users\\spoor\\Desktop\\Uni\\MCS\\Semester2\\GP\\GP-Project-4DGeo\\src\\exercise10\\shaders\\shader.frag");
-
+    LoadAndCompileShader(fragmentShader, "shaders/shader.frag");
 
     // Attach shaders and link
     if (!m_shaderProgram.Build(vertexShader, fragmentShader))
@@ -259,22 +276,30 @@ void Geometry4DApplication::InitializeCamera()
 
 void Geometry4DApplication::InitializeUniforms()
 {
+    m_colorUniform = m_shaderProgram.GetUniformLocation("Color");
+
+    // Texture Uniforms
     m_texture = m_shaderProgram.GetUniformLocation("Texture");
     m_usingTexture = m_shaderProgram.GetUniformLocation("UsingTexture");
-    //Should be in a material
+
+    // Blinn-Phong Material Uniforms
     m_ambientReflectionUniform = m_shaderProgram.GetUniformLocation("AmbientReflection");
     m_diffuseReflectionUniform = m_shaderProgram.GetUniformLocation("DiffuseReflection");
     m_specularReflectionUniform = m_shaderProgram.GetUniformLocation("SpecularReflection");
     m_specularExponentUniform = m_shaderProgram.GetUniformLocation("SpecularExponent");
 
-    m_colorUniform = m_shaderProgram.GetUniformLocation("Color");
+    // Other Blinn-Phong Uniforms
     m_ambientColorUniform = m_shaderProgram.GetUniformLocation("AmbientColor");
     m_lightColorUniform = m_shaderProgram.GetUniformLocation("LightColor");
     m_lightPositionUniform = m_shaderProgram.GetUniformLocation("LightPosition");
     m_cameraPositionUniform = m_shaderProgram.GetUniformLocation("CameraPosition");
+
+    // Transformation Uniforms
     m_worldRotationMatrixUniform = m_shaderProgram.GetUniformLocation("WorldRotationMatrix");
     m_worldTranslationVectorUniform = m_shaderProgram.GetUniformLocation("WorldTranslationVector");
     m_worldScaleVectorUniform = m_shaderProgram.GetUniformLocation("WorldScaleVector");
+
+    // Camera Perspective Uniform
     m_viewProjMatrixUniform = m_shaderProgram.GetUniformLocation("ViewProjMatrix");
 }
 
@@ -317,6 +342,7 @@ void Geometry4DApplication::LoadAndCompileShader(Shader& shader, const char* pat
 
 void Geometry4DApplication::ResetState()
 {
+    // By pressing 'r', the cubes are reset to their default state
     bool resetState = GetMainWindow().IsKeyPressed(GLFW_KEY_R);
     if (resetState)
     {
@@ -338,7 +364,6 @@ void Geometry4DApplication::RenderGUI()
 
         if (ImGui::TreeNodeEx("Cube", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            // Add controls for cube parameters
             ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
             ImGui::SliderFloat("Scale", &m_scale, 0.5f, 1.5f);
             ImGui::SliderFloat3("Center", &m_cubeCenter[0], -5.0f, 5.0f);
@@ -355,7 +380,9 @@ void Geometry4DApplication::RenderGUI()
 
 void Geometry4DApplication::CreateTextured4DCube(Mesh* mesh, float size)
 {
-    //In order to properly texture the cube, duplicate vertices are needed with unique Texture Coordinates
+    // In order to properly texture the cube, duplicate vertices are needed with unique texture coordinates
+    // Not that this hypercube does not have a consistent winding order (Since backface culling is non-trivial for 4D objects)
+
     VertexFormat vertexFormat;
     vertexFormat.AddVertexAttribute<float>(4);
     vertexFormat.AddVertexAttribute<float>(4);
@@ -433,9 +460,6 @@ void Geometry4DApplication::CreateTextured4DCube(Mesh* mesh, float size)
         Vertex(glm::vec4(-size / 2, -size / 2, size / 2, size / 2), glm::vec2(1, 1)),
     };
 
-
-
-
     for (int i = 0; i < vertices.size(); i++) {
         vertices[i].normal = glm::normalize(vertices[i].position);
     }
@@ -508,6 +532,9 @@ void Geometry4DApplication::CreateTextured4DCube(Mesh* mesh, float size)
 
 void Geometry4DApplication::Create4DCube(Mesh* mesh, float size)
 {
+    // Creates a hypercube with no repeating vertices. Good for rendering geometry, but cannot be textured.
+    // Does have a consistent winding order, despite backface culling not being enabled
+
     VertexFormat vertexFormat;
     vertexFormat.AddVertexAttribute<float>(4);
     vertexFormat.AddVertexAttribute<float>(4);
@@ -612,6 +639,8 @@ void Geometry4DApplication::Create4DCube(Mesh* mesh, float size)
 
 void Geometry4DApplication::Create4DCubeWireframe(Mesh* mesh, float size)
 {
+    // Creates the wireframe of a hypercube. Optimal for seeing/understanding 4D rotations, or creating an outline for solid hypercubes
+
     VertexFormat vertexFormat;
     vertexFormat.AddVertexAttribute<float>(4);
     vertexFormat.AddVertexAttribute<float>(4);
@@ -691,6 +720,8 @@ void Geometry4DApplication::Create4DCubeWireframe(Mesh* mesh, float size)
 
 glm::mat4 Geometry4DApplication::Rotate4D(float xy, float yz, float xz, float xw, float yw, float zw)
 {
+    // Creates the Rotation matrix for 4D objects, given the rotation in the xy, yz, xz, xw, yw and zw planes.
+ 
     float mXY[16] = {
             cos(xy), -sin(xy), 0, 0,
             sin(xy), cos(xy), 0, 0,

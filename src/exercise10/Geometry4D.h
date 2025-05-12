@@ -7,6 +7,10 @@
 #include <ituGL/utils/DearImGui.h>
 #include <glm/glm.hpp>
 
+// The Vertex struct contains the necessary vertex information:
+// Position (vec4)
+// Normal (vec4)
+// Texture Coordinate (vec2)
 struct Vertex
 {
     Vertex() = default;
@@ -48,8 +52,10 @@ private:
     void Create4DCube(Mesh* mesh, float size);
     void Create4DCubeWireframe(Mesh* mesh, float size);
 
+    // 4D Transformations
     glm::mat4 Rotate4D(float xy, float yz, float xz, float xw, float yw, float zw);
 
+    // Textures
     std::shared_ptr<Texture2DObject> LoadTexture(const char* path);
 
 private:
@@ -59,31 +65,36 @@ private:
 
     ShaderProgram m_shaderProgram;
 
-    //Textures
+    // Textures
     std::shared_ptr<Texture2DObject> m_dirtTexture;
     std::shared_ptr<Texture2DObject> m_grassTexture;
     std::shared_ptr<Texture2DObject> m_rockTexture;
     std::shared_ptr<Texture2DObject> m_snowTexture;
 
+    // Texture Uniforms
     ShaderProgram::Location m_texture;
     ShaderProgram::Location m_usingTexture;
 
-    //Material Uniforms
+    // Blinn-Phong Material Uniforms
     ShaderProgram::Location m_ambientReflectionUniform;
     ShaderProgram::Location m_diffuseReflectionUniform;
     ShaderProgram::Location m_specularReflectionUniform;
     ShaderProgram::Location m_specularExponentUniform;
 
-    //Uniforms 
-    ShaderProgram::Location m_colorUniform;
+    // Other Blinn-Phong Uniforms
     ShaderProgram::Location m_ambientColorUniform;
     ShaderProgram::Location m_lightColorUniform;
     ShaderProgram::Location m_lightPositionUniform;
     ShaderProgram::Location m_cameraPositionUniform;
+
+    // Transformation Uniforms
     ShaderProgram::Location m_worldRotationMatrixUniform;
     ShaderProgram::Location m_worldTranslationVectorUniform;
     ShaderProgram::Location m_worldScaleVectorUniform;
+
     ShaderProgram::Location m_viewProjMatrixUniform;
+    
+    ShaderProgram::Location m_colorUniform;
 
     Camera m_camera;
     CameraController m_cameraController;
@@ -97,6 +108,7 @@ private:
     float m_ywRotation;
     float m_zwRotation;
 
+    // Imgui member variables
     float m_rotationVelocities[6];
     float m_cubeCenter[4];
     const char* m_textureList[4] = {"Dirt", "Grass", "Rock", "Snow"};
